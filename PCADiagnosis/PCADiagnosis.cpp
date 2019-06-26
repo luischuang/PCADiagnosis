@@ -15,16 +15,14 @@ PCADiagnosis::~PCADiagnosis()
 void PCADiagnosis::getMean(MatrixXd data, RowVectorXd& mean)
 {
 	MatrixXd meanval = data.colwise().mean();
-	//cout << "均值" << meanval << endl;
 	 mean = meanval;
 }
 
 //列向量标准差
 void PCADiagnosis::getSigma(MatrixXd data, RowVectorXd& sigma)
 {
-	MatrixXd meanval = data.colwise().mean();
-	RowVectorXd meanvecRow = meanval;	//均值
-	data.rowwise() -= meanvecRow;
+	RowVectorXd meanval = data.colwise().mean(); //均值
+	data.rowwise() -= meanval;
 	RowVectorXd tem=data.colwise().squaredNorm()/data.rows();
 	sigma = tem.cwiseSqrt();
 }
@@ -32,12 +30,11 @@ void PCADiagnosis::getSigma(MatrixXd data, RowVectorXd& sigma)
 	/*
 	标准化
 	*/
-void PCADiagnosis::standardizing(RowVectorXd mean, RowVectorXd sigma, MatrixXd& data)
+void PCADiagnosis::standardizing(MatrixXd data, RowVectorXd  mean, RowVectorXd sigma, MatrixXd& standardData)
 {
-	data.rowwise() -= mean;
 	for (int i = 0; i < data.rows();i++) {
 		for (int j = 0; j < data.cols(); j++) {
-			data(i, j) = data(i, j) / sigma(j);
+			standardData(i, j) = (data(i, j)-mean(j)) / sigma(j);
 		}
 	}
 }
@@ -45,11 +42,17 @@ void PCADiagnosis::standardizing(RowVectorXd mean, RowVectorXd sigma, MatrixXd& 
 /*
 	计算协方差
 */
-void PCADiagnosis::getCov(MatrixXd data, RowVectorXd mean, MatrixXd& cov)
+void PCADiagnosis::getCov(MatrixXd data, MatrixXd& cov)
 {
-	data.rowwise() -= mean;
-	cov=data.adjoint()* data;
-	cov = cov.array() / (data.rows()-1);
+	//求取列向量均值
+	MatrixXd meanVec = data.colwise().mean();
+	//求取上述的零均值列向量矩阵
+	MatrixXd  zeroMeanMat = data;
+	//将列向量均值从MatrixXf 转换为行向量 RowVectorXf
+	RowVectorXd  meanVecRow(RowVectorXd::Map(meanVec.data(), 4));
+	zeroMeanMat.rowwise() -= meanVecRow;
+	//计算协方差
+	cov = (zeroMeanMat.adjoint()*zeroMeanMat) / double(data.rows() - 1);
 }
 
 /*
@@ -82,20 +85,41 @@ void PCADiagnosis::calculateLoad(MatrixXd characterMatrix, MatrixXd characterVal
 /*
 	计算指标T
 */
-void PCADiagnosis::calculateT(MatrixXd data, MatrixXd cov, MatrixXd& T)
+void PCADiagnosis::calculateT2(MatrixXd data, MatrixXd cov, RowVectorXd& T2)
 {
 	MatrixXd invcov(cov.rows(),cov.cols());
 	invcov = cov.inverse();
-	T=data* invcov* data.transpose();
-	
-
+	for (int i = 0; i < data.rows(); i++) {
+		T2(i) = data.row(i)*cov.inverse()*data.row(i).transpose();
+	}
+}
+void PCADiagnosis::calculateLimit(RowVectorXd T2, double & max, double & min)
+{
+	double meanval = T2.mean(); //均值
+	double sum = 0;
+	for (int i = 0; i < T2.size(); i++) {
+		sum += (T2(i) - meanval)*(T2(i) - meanval);
+	}
+	double sigma = sqrt(sum/ T2.size());
+	max = meanval + 3 * sigma;
+	min = meanval - 3 * sigma;
 }
 /*
 计算故障贡献度
 */
-void PCADiagnosis::calculateC(MatrixXd data, MatrixXd load, MatrixXd cov, MatrixXd C)
+void PCADiagnosis::calculateC(MatrixXd data, MatrixXd load, MatrixXd cov, MatrixXd& C)
 {
-
+	for (int i = 0; i < data.rows(); i++) {
+		double sum = 0;
+		for (int j = 0; j < data.cols(); j++) {
+			C(i, j) = (data.row(i)*load)*cov.inverse()*(data(i, j)*load.col(j));
+			C(i, j) = abs(C(i, j));
+			sum += C(i, j);
+		}
+		for (int j = 0; j < data.cols(); j++) {
+			C(i, j) = C(i, j)/sum;
+		}
+	}
 }
 
 
